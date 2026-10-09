@@ -100,7 +100,8 @@ td.r,th.r{text-align:right}
 .kpis.k4{grid-template-columns:repeat(2,1fr)}
 .kpi .v.f{color:#ff6b6b}.kpi .v.s{color:#ffa45c}
 .sev{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3px;vertical-align:-1px}
-select:disabled{opacity:.5}
+select:disabled,.btn:disabled,input:disabled{opacity:.4;cursor:default}
+.drawer .drag{cursor:grab}.drawer .drag:active{cursor:grabbing}
 .layers{max-height:calc(100% - 20px);overflow:auto}
 .layers .bm{display:flex;flex-direction:column;gap:3px;padding-bottom:6px;margin-bottom:4px;border-bottom:1px solid var(--line)}
 .layers select{max-width:190px;font-size:12px}
@@ -209,6 +210,11 @@ select:disabled{opacity:.5}
       <div class="row"><div class="nm">ความทึบ</div><div class="ctl"><input type="range" id="s-baseop" min="0.2" max="1" step="0.05"><span class="num" id="s-baseop-v"></span></div></div>
       <div class="row"><label class="nm" for="s-token">Token แผนที่ ทช.</label><div class="ctl full" style="grid-column:1/-1"><input id="s-token" type="text" autocomplete="off" spellcheck="false" placeholder="วาง Token จาก gis.drr.go.th" style="flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:11.5px var(--f-mono)"><button class="btn" id="s-token-apply" type="button">ใช้ Token</button></div></div>
       <p class="hint">บริการ DRR_BasemapCached ต้องใช้ Token · ขอได้จาก https://gis.drr.go.th/arcgis/tokens/ ด้วยบัญชี GIS ของ ทช. · Token เก็บเฉพาะในเบราว์เซอร์นี้ ไม่ได้ฝังในไฟล์</p>
+      <h4>ลำดับชั้นข้อมูล</h4>
+      <div id="s-order"></div>
+      <p class="hint">ลากแถวขึ้น–ลง หรือกด ▲ ▼ · บนสุด = วาดทับชั้นอื่นและคลิกโดนก่อน · ขอบเขตการปกครองอยู่ล่างสุดเสมอ และเส้นไฮไลต์สายที่เลือกอยู่บนสุดเสมอ</p>
+      <h4>สัญลักษณ์และความโปร่งใส</h4>
+      <div id="s-style"></div>
       <h4>การแสดงผลตามระดับซูม</h4>
       <div id="s-layers"></div>
       <p class="hint">ชั้นจะแสดงเมื่อระดับซูมอยู่ในช่วงที่ตั้ง และติ๊กเปิดอยู่ในแผงชั้นข้อมูล · ตัวเลข 1:… คือมาตราส่วนโดยประมาณที่ละติจูดประเทศไทย</p>
@@ -320,12 +326,15 @@ map.options.renderer=rend;
 const LAND=[];D.land.forEach(([th,ring])=>LAND.push(L.polygon(ring.map(([x,y])=>[y,x]),{renderer:rend,interactive:false,stroke:true,color:th?'#2c4152':'#18242e',weight:th?1.2:.8,fillColor:th?'#0f1c26':'#0b151d',fillOpacity:1}).addTo(map)));
 /* ---------- settings (per viewer, remembered in this browser when possible) ---------- */
 const ZMIN=5,ZMAX=17;
-const DEF_CFG={base:'dark',baseOp:1,
+const DEF_CFG={base:'dark',baseOp:1,order:['pts','acc','br','roads'],
+  style:{pts:{shape:'circle',op:0.95,ramp:'gold',stroke:true},acc:{shape:'diamond',op:0.85,mode:'sev',color:'#ff5c5c',stroke:true},
+         br:{shape:'square',op:0.6,color:'#35c4c9'},roads:{w:1,op:1,funded:'#46606f',unf:'#2b3b48'}},
   layers:{roads:{min:5,max:17},pts:{min:5,max:17,size:1},acc:{min:5,max:17,size:1},br:{min:8,max:17},pro:{min:5,max:17},amp:{min:7,max:17},tam:{min:9,max:17}},
   labels:{pro:{on:true,size:12,color:'#c9d6df',halo:true,min:6,max:9,field:'name'},road:{on:false,size:11,color:'#ffe08a',halo:true,min:10,max:17,field:'code',only:'funded'},
           amp:{on:false,size:11,color:'#a3b4c1',halo:true,min:9,max:12,field:'name'},tam:{on:false,size:10,color:'#8ea2b1',halo:true,min:11,max:17,field:'name'}}};
 let CFG=JSON.parse(JSON.stringify(DEF_CFG));
-try{const sv=JSON.parse(localStorage.getItem('drrmap.cfg.v1')||'null');if(sv){CFG=Object.assign(CFG,sv);['layers','labels'].forEach(k=>{CFG[k]=Object.assign(JSON.parse(JSON.stringify(DEF_CFG[k])),sv[k]||{});Object.keys(DEF_CFG[k]).forEach(n=>CFG[k][n]=Object.assign({},DEF_CFG[k][n],(sv[k]||{})[n]||{}))})}}catch(e){}
+try{const sv=JSON.parse(localStorage.getItem('drrmap.cfg.v1')||'null');if(sv){CFG=Object.assign(CFG,sv);['layers','labels','style'].forEach(k=>{CFG[k]=Object.assign(JSON.parse(JSON.stringify(DEF_CFG[k])),sv[k]||{});Object.keys(DEF_CFG[k]).forEach(n=>CFG[k][n]=Object.assign({},DEF_CFG[k][n],(sv[k]||{})[n]||{}))})}}catch(e){}
+if(!Array.isArray(CFG.order)||CFG.order.slice().sort().join()!==DEF_CFG.order.slice().sort().join())CFG.order=DEF_CFG.order.slice();
 function saveCfg(){try{localStorage.setItem('drrmap.cfg.v1',JSON.stringify(CFG))}catch(e){}}
 const scaleTxt=z=>{const d=591657527.6*0.974/Math.pow(2,z);return '1:'+(d>=1e6?(d/1e6).toFixed(d>=1e7?0:1)+' ล้าน':Math.round(d/1000)+'k')};
 const inZ=(c,z=map.getZoom())=>z>=c.min&&z<=c.max;
@@ -397,7 +406,23 @@ function shadeAdm(){
   S.shadeBreaks=br;
 }
 S.shade='';
-const RAMP=['--r1','--r2','--r3','--r4','--r5'].map(v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim());
+const RAMPS={gold:['#5a4517','#8d6612','#c48a0f','#f2b631','#ffe08a'],blue:['#184f95','#256abf','#3987e5','#6da7ec','#b7d3f6'],
+  green:['#0f5a3a','#13824f','#1baf7a','#4fd29b','#a6ecc8'],violet:['#3d2f8f','#5b49c4','#9085e9','#b8afff','#ddd8ff'],white:['#5d6b76','#82919c','#a9b6bf','#d0d9df','#ffffff']};
+const RAMP_NAMES={gold:'ทอง (ค่าเริ่มต้น)',blue:'ฟ้า',green:'เขียว',violet:'ม่วง',white:'ขาว–เทา'};
+let RAMP=RAMPS[CFG.style.pts.ramp]||RAMPS.gold;
+const SHAPES={circle:'วงกลม',square:'สี่เหลี่ยม',diamond:'ข้าวหลามตัด',triangle:'สามเหลี่ยม',cross:'กากบาท'};
+const ShapeMarker=L.CircleMarker.extend({options:{shape:'circle'},
+  _updatePath(){const sh=this.options.shape,R=this._renderer;if(sh==='circle'||!R||!R._ctx)return L.CircleMarker.prototype._updatePath.call(this);
+    if(!R._drawing||this._empty())return;const c=R._ctx,p=this._point,r=Math.max(this._radius,1.5);c.beginPath();
+    if(sh==='square'){const q=r*0.9;c.rect(p.x-q,p.y-q,2*q,2*q)}
+    else if(sh==='diamond'){const q=r*1.25;c.moveTo(p.x,p.y-q);c.lineTo(p.x+q,p.y);c.lineTo(p.x,p.y+q);c.lineTo(p.x-q,p.y);c.closePath()}
+    else if(sh==='triangle'){const q=r*1.3;c.moveTo(p.x,p.y-q);c.lineTo(p.x+q*0.95,p.y+q*0.7);c.lineTo(p.x-q*0.95,p.y+q*0.7);c.closePath()}
+    else if(sh==='cross'){const q=r*1.1,w=r*0.42;c.moveTo(p.x-w,p.y-q);c.lineTo(p.x+w,p.y-q);c.lineTo(p.x+w,p.y-w);c.lineTo(p.x+q,p.y-w);c.lineTo(p.x+q,p.y+w);c.lineTo(p.x+w,p.y+w);c.lineTo(p.x+w,p.y+q);c.lineTo(p.x-w,p.y+q);c.lineTo(p.x-w,p.y+w);c.lineTo(p.x-q,p.y+w);c.lineTo(p.x-q,p.y-w);c.lineTo(p.x-w,p.y-w);c.closePath()}
+    R._fillStroke(c,this)}});
+const mk=(ll,o)=>new ShapeMarker(ll,o);
+function shapeSVG(sh,fill,stroke){const P={circle:'<circle cx="6" cy="6" r="4.5"/>',square:'<rect x="2" y="2" width="8" height="8"/>',diamond:'<path d="M6 0.8L11.2 6 6 11.2 0.8 6z"/>',
+  triangle:'<path d="M6 1L11 10.2H1z"/>',cross:'<path d="M4.3 1h3.4v3.3H11v3.4H7.7V11H4.3V7.7H1V4.3h3.3z"/>'}[sh]||'';
+  return `<svg width="12" height="12" viewBox="0 0 12 12" style="vertical-align:-1px;margin-right:3px"><g fill="${fill}" stroke="${stroke||'none'}" stroke-width="1">${P}</g></svg>`}
 const C0=getComputedStyle(document.documentElement).getPropertyValue('--r0').trim();
 const AQUA=getComputedStyle(document.documentElement).getPropertyValue('--aqua').trim();
 const segLayer=L.layerGroup().addTo(map), ptLayer=L.layerGroup().addTo(map), brLayer=L.layerGroup(), hiLayer=L.layerGroup().addTo(map);
@@ -406,7 +431,7 @@ SEG.forEach(s=>{if(s.geom)s.ll=Array.isArray(s.geom)&&typeof s.geom[0]==='string
 SEG.forEach(s=>{if(!s.geom)return;s.line=L.polyline(s.ll,{renderer:rend,weight:1,color:C0,opacity:.9,smoothFactor:1.5});
   s.line.on('click',()=>select(s.g,false));s.line.on('mouseover',e=>{s._w=s.line.options.weight;s._c=s.line.options.color;s.line.setStyle({weight:Math.max(4,s._w+2.5),color:'#ffffff'});hoverGroup(s.g,e.originalEvent)});s.line.on('mouseout',()=>{s.line.setStyle({weight:s._w,color:s._c});hideTip()});s.line.addTo(segLayer)});
 let brBuilt=false;
-function buildBridges(){if(brBuilt)return;brBuilt=true;D.bridges.forEach(b=>{L.circleMarker([b[1],b[0]],{renderer:rend,radius:2,weight:0,fillColor:AQUA,fillOpacity:.55}).bindTooltip(`${esc(b[2])} กม.${esc(b[3])}${b[4]?' · '+esc(b[4]):''}`).addTo(brLayer)})}
+function buildBridges(){if(brBuilt)return;brBuilt=true;brLayer.clearLayers();const st=CFG.style.br;D.bridges.forEach(b=>{mk([b[1],b[0]],{renderer:rend,shape:st.shape,radius:2.2,weight:0,fillColor:st.color,fillOpacity:st.op}).bindTooltip(`${esc(b[2])} กม.${esc(b[3])}${b[4]?' · '+esc(b[4]):''}`).addTo(brLayer)})}
 $('#ly-br').onchange=()=>applyVis();
 ['pro','amp','tam'].forEach(id=>$('#ly-'+id).onchange=syncAdm);
 $('#f-shade').onchange=e=>{S.shade=e.target.value;syncAdm();drawLegend()};
@@ -420,10 +445,10 @@ function accInScope(a,ignoreYear){const yr=S.acc.mode==='cal'?a.cy:a.fy;
 let accSig='';
 function drawAcc(force){const sig=[S.acc.on,S.acc.mode,[...S.acc.years].join(','),S.acc.sev,S.prov,S.bur,S.own].join('|');
   if(!force&&sig===accSig)return;accSig=sig;accLayer.clearLayers();if(!S.acc.on)return;
-  ACC.filter(a=>a.lat!=null&&accInScope(a)).sort((x,y)=>x.sev-y.sev).forEach(a=>{const m=L.circleMarker([a.lat,a.lon],{renderer:rend,radius:(a.sev>=2?3.4:2.4)*CFG.layers.acc.size,weight:a.sev===3?1:0,color:'#2a0b0b',fillColor:SEVC[a.sev],fillOpacity:a.sev?.9:.6});
+  ACC.filter(a=>a.lat!=null&&accInScope(a)).sort((x,y)=>x.sev-y.sev).forEach(a=>{const st=CFG.style.acc;const m=mk([a.lat,a.lon],{renderer:rend,shape:st.shape,radius:(a.sev>=2?3.4:2.4)*CFG.layers.acc.size,weight:st.stroke&&a.sev>=2?1:0,color:'#1a0606',fillColor:st.mode==='sev'?SEVC[a.sev]:st.color,fillOpacity:st.op*(a.sev?1:.7)});
     m.on('mouseover',e=>showTip(`<b>อุบัติเหตุ ${esc(a.dt)}</b><br><span class="code">${esc(a.rc)}</span> กม.${esc(a.km)}<br>${esc(D.pats[a.pat])}<br>เสียชีวิต ${a.f} · สาหัส ${a.s} · เล็กน้อย ${a.l}${a.g?'<br><span class="sub">คลิกเพื่อดูสายทางนี้</span>':''}`,e.originalEvent));
     m.on('mouseout',hideTip);if(a.g)m.on('click',()=>select(a.g,false));m.addTo(accLayer)});
-  ptLayer.eachLayer(l=>l.bringToFront());hiLayer.eachLayer(l=>l.bringToFront&&l.bringToFront())}
+  applyOrder()}
 $('#ly-acc').onchange=e=>{S.acc.on=e.target.checked;drawAcc();drawLegend();applyVis()};
 $('#a-cal').onclick=()=>{S.acc.mode='cal';$('#a-cal').setAttribute('aria-pressed','true');$('#a-fy').setAttribute('aria-pressed','false');syncAccYears();accUpdate()};
 $('#a-fy').onclick=()=>{S.acc.mode='fy';$('#a-fy').setAttribute('aria-pressed','true');$('#a-cal').setAttribute('aria-pressed','false');syncAccYears();accUpdate()};
@@ -445,10 +470,16 @@ function drawAccPanel(){
   $('#acc-note').textContent=S.acc.mode==='cal'?'* ข้อมูลไม่ครบปี: 2569 มีถึง 23 ก.ย. 2569':'* ข้อมูลไม่ครบปี: ปีงบ 58 เริ่ม 1 ม.ค. 2558 (ขาด ต.ค.–ธ.ค. 57) · ปีงบ 69 ถึง 23 ก.ย. 2569';
 }
 $('#ly-roads').onchange=()=>update(); $('#ly-unf').onchange=()=>update(); $('#ly-pts').onchange=()=>applyVis();
+const ORDER_NAMES={pts:'จุดที่ได้งบ',acc:'จุดอุบัติเหตุ',br:'สะพานบนสายทาง',roads:'โครงข่ายสายทาง'};
+function applyOrder(){const lay={pts:ptLayer,acc:accLayer,br:brLayer};
+  [...CFG.order].reverse().forEach(k=>{
+    if(k==='roads'){SEG.forEach(s=>{if(s.line&&segLayer.hasLayer(s.line)&&!AGG.has(s.g))s.line.bringToFront()});SEG.forEach(s=>{if(s.line&&segLayer.hasLayer(s.line)&&AGG.has(s.g))s.line.bringToFront()})}
+    else if(map.hasLayer(lay[k]))lay[k].eachLayer(l=>l.bringToFront&&l.bringToFront())});
+  hiLayer.eachLayer(l=>l.bringToFront&&l.bringToFront())}
 function showLayer(l,on){if(on&&!map.hasLayer(l))l.addTo(map);else if(!on&&map.hasLayer(l))map.removeLayer(l)}
 function applyVis(){const L_=CFG.layers;showLayer(segLayer,inZ(L_.roads));showLayer(ptLayer,$('#ly-pts').checked&&inZ(L_.pts));showLayer(accLayer,S.acc.on&&inZ(L_.acc));
   const br=$('#ly-br').checked&&inZ(L_.br);if(br)buildBridges();showLayer(brLayer,br);syncAdm();
-  ptLayer.eachLayer(l=>l.bringToFront());hiLayer.eachLayer(l=>l.bringToFront&&l.bringToFront());labels.redraw()}
+  applyOrder();labels.redraw()}
 map.on('zoomend',applyVis);
 
 /* ---------- aggregation ---------- */
@@ -472,32 +503,32 @@ function drawMap(fit){
     const vis=showRoads&&inB&&(a||showUnf);
     if(!vis){if(segLayer.hasLayer(s.line))segLayer.removeLayer(s.line);return}
     if(!segLayer.hasLayer(s.line))segLayer.addLayer(s.line);
-    if(S.view==='ln'){s.line.setStyle({color:a?colorFor(a.sum):C0,weight:a?widthFor(a.years.size):.8,opacity:a?.95:.55});if(a)s.line.bringToFront();}
-    else s.line.setStyle({color:a?'#46606f':C0,weight:a?1.4:.8,opacity:a?.9:.5}); if(fit&&S.bur!==''&&S.prov==='')bounds.push(s.line.getBounds())});
+    const rs=CFG.style.roads;if(S.view==='ln'){s.line.setStyle({color:a?colorFor(a.sum):rs.unf,weight:(a?widthFor(a.years.size):.8)*rs.w,opacity:(a?.95:.55)*rs.op});}
+    else s.line.setStyle({color:a?rs.funded:rs.unf,weight:(a?1.4:.8)*rs.w,opacity:(a?.9:.5)*rs.op}); if(fit&&S.bur!==''&&S.prov==='')bounds.push(s.line.getBounds())});
   ptLayer.clearLayers();
   const firstPt=new Map();SCOPE.forEach(p=>{if(p.g&&p.lat!=null&&!firstPt.has(p.g))firstPt.set(p.g,p)});
   [...groups.values()].filter(g=>AGG.has(g.k)&&groupInBur(g)).sort((x,y)=>AGG.get(x.k).sum-AGG.get(y.k).sum).forEach(g=>{const a=AGG.get(g.k);let lat=g.lat,lon=g.lon,approx=false;
     if(g.kind==='road'){const hasGeom=g.segs.some(s=>s.geom);if(hasGeom&&S.view==='ln')return;const p=firstPt.get(g.k);if(!p)return;lat=p.lat;lon=p.lon;approx=!hasGeom||p.lv>=3}
     if(g.kind==='nonet')approx=true; if(lat==null)return;
-    const m=L.circleMarker([lat,lon],{renderer:rend,radius:ptR(a.years.size),weight:approx?1.5:1,color:approx?'#e66767':'#0a1117',fillColor:approx?'transparent':(g.kind==='bridge'?AQUA:colorFor(a.sum)),fillOpacity:approx?0:.95,dashArray:approx?'2 2':null});
+    const st=CFG.style.pts;const m=mk([lat,lon],{renderer:rend,shape:st.shape,radius:ptR(a.years.size),weight:approx?1.5:(st.stroke?1:0),color:approx?'#e66767':'#0a1117',fillColor:approx?'transparent':(g.kind==='bridge'?AQUA:colorFor(a.sum)),fillOpacity:approx?0:st.op,dashArray:approx?'2 2':null});
     m.on('click',()=>select(g.k));m.on('mouseover',e=>hoverGroup(g.k,e.originalEvent));m.on('mouseout',hideTip);m.addTo(ptLayer)});
   // ungrouped approximations (no code) as tiny hollow markers
   SCOPE.forEach(p=>{if(p.g||p.lat==null)return;const m=L.circleMarker([p.lat,p.lon],{renderer:rend,radius:4,weight:1.2,color:'#e66767',fillOpacity:0,dashArray:'2 2'});
     m.bindPopup(`<b>${esc(p.name)}</b><br><span class="num">${fmtM(amt(p))}</span> ล้านบาท · ปี ${p.y}<br><span class="note">${esc(p.note)}</span>`);m.addTo(ptLayer)});
   if(fit&&S.prov!==''){const f=AF.p.features.find(f=>f.properties.c===S.prov);if(f)map.fitBounds(L.geoJSON(f).getBounds(),{padding:[20,20]})}
   else if(fit&&bounds.length){let b=bounds[0];bounds.forEach(x=>b.extend(x));map.fitBounds(b,{padding:[20,20]})} else if(fit&&S.bur==='')map.setView([13.2,101],6);
-  shadeAdm(); drawLegend();
+  shadeAdm(); drawLegend(); applyOrder();
 }
 function drawLegend(){
   const lab=i=>i===0?'≤ '+fmtM(BREAKS[0]):i===4?'> '+fmtM(BREAKS[3]):fmtM(BREAKS[i-1])+'–'+fmtM(BREAKS[i]);
   const pt=S.view==='pt';
   $('#legend').innerHTML=`<div class="row" style="color:var(--ink)">งบรวมต่อสาย (ล้านบาท) · ${pt?'จุดใหญ่':'เส้นหนา'} = ได้หลายปี</div>`+
-   RAMP.map((c,i)=>`<div class="row">${pt?`<span class="dot" style="background:${c}"></span>`:`<span class="sw" style="background:${c}"></span>`}<span class="num">${lab(i)}</span></div>`).join('')+
-   (pt?`<div class="row"><span class="sw" style="background:#46606f"></span>สายที่ได้งบ (โครงข่าย)</div>`:'')+
-   `<div class="row"><span class="sw" style="background:${C0}"></span>ไม่ได้งบในช่วงที่เลือก</div>
+   RAMP.map((c,i)=>`<div class="row">${pt?shapeSVG(CFG.style.pts.shape,c,CFG.style.pts.stroke?'#0a1117':''):`<span class="sw" style="background:${c}"></span>`}<span class="num">${lab(i)}</span></div>`).join('')+
+   (pt?`<div class="row"><span class="sw" style="background:${CFG.style.roads.funded}"></span>สายที่ได้งบ (โครงข่าย)</div>`:'')+
+   `<div class="row"><span class="sw" style="background:${CFG.style.roads.unf}"></span>ไม่ได้งบในช่วงที่เลือก</div>
     ${S.shade&&S.shadeBreaks?`<div class="row" style="color:var(--ink);margin-top:3px">พื้นที่${S.shade==='p'?'จังหวัด':'อำเภอ'}: งบรวม ${fmtM(S.shadeBreaks[0])} → > ${fmtM(S.shadeBreaks[3])} ล้านบาท</div><div class="row">${AREA.map(c=>`<span class="sw" style="background:${c};width:22px;height:9px"></span>`).join('')}</div>`:''}
     <div class="row"><span class="dot" style="background:${AQUA}"></span>สะพานชุมชน <span class="dot" style="border:1.5px dashed #e66767;margin-left:6px"></span>ตำแหน่งประมาณ</div>
-    ${S.acc&&S.acc.on?`<div class="row" style="color:var(--ink);margin-top:3px">อุบัติเหตุ</div><div class="row">${[[3,'เสียชีวิต'],[2,'สาหัส'],[1,'เล็กน้อย'],[0,'ทรัพย์สิน']].map(([i,t])=>`<span><span class="sev" style="background:${SEVC[i]}"></span>${t}</span>`).join(' ')}</div>`:''}`;
+    ${S.acc&&S.acc.on?`<div class="row" style="color:var(--ink);margin-top:3px">อุบัติเหตุ</div><div class="row">${CFG.style.acc.mode==='sev'?[[3,'เสียชีวิต'],[2,'สาหัส'],[1,'เล็กน้อย'],[0,'ทรัพย์สิน']].map(([i,t])=>`<span>${shapeSVG(CFG.style.acc.shape,SEVC[i])}${t}</span>`).join(' '):`<span>${shapeSVG(CFG.style.acc.shape,CFG.style.acc.color)}ทุกเหตุ</span>`}</div>`:''}`;
 }
 
 /* ---------- labels (canvas overlay with collision avoidance) ---------- */
@@ -530,7 +561,25 @@ const labels=new LabelLayer().addTo(map);
 const LAYER_NAMES={roads:'โครงข่ายสายทาง',pts:'จุดที่ได้งบ',acc:'อุบัติเหตุ',br:'สะพานบนสายทาง',pro:'ขอบเขตจังหวัด',amp:'ขอบเขตอำเภอ',tam:'ขอบเขตตำบล'};
 const LABEL_NAMES={pro:'ชื่อจังหวัด',road:'ป้ายสายทาง',amp:'ชื่ออำเภอ',tam:'ชื่อตำบล'};
 const zOpts=v=>Array.from({length:ZMAX-ZMIN+1},(_,i)=>i+ZMIN).map(z=>`<option value="${z}"${z===v?' selected':''}>z${z} · ${scaleTxt(z)}</option>`).join('');
-function renderDrawer(){
+function renderOrder(){$('#s-order').innerHTML=CFG.order.map((k,i)=>`<div class="row drag" draggable="true" data-k="${k}"><div class="nm"><span aria-hidden="true" style="cursor:grab;color:var(--muted)">⋮⋮</span><span class="num" style="color:var(--muted)">${i+1}</span> ${ORDER_NAMES[k]}${i===0?' <span class="sub">(บนสุด)</span>':i===CFG.order.length-1?' <span class="sub">(ล่างสุด)</span>':''}</div>
+  <div class="ctl"><button class="btn" data-mv="${k}" data-d="-1" ${i===0?'disabled':''} aria-label="ย้าย ${ORDER_NAMES[k]} ขึ้น">▲</button><button class="btn" data-mv="${k}" data-d="1" ${i===CFG.order.length-1?'disabled':''} aria-label="ย้าย ${ORDER_NAMES[k]} ลง">▼</button></div></div>`).join('')}
+const pct=v=>Math.round(v*100)+'%';
+const opt=(o,v)=>Object.entries(o).map(([k,t])=>`<option value="${k}"${k===v?' selected':''}>${t}</option>`).join('');
+function renderStyle(){const S_=CFG.style;
+  const op=(k,v)=>`ความทึบ <input type="range" min="0.1" max="1" step="0.05" value="${v}" data-s="${k}" data-f="op" aria-label="ความทึบ"><span class="num">${pct(v)}</span>`;
+  $('#s-style').innerHTML=`
+  <div class="row"><div class="nm">จุดที่ได้งบ</div><div class="ctl"><select data-s="pts" data-f="shape" aria-label="รูปทรงจุดงบ">${opt(SHAPES,S_.pts.shape)}</select></div>
+    <div class="ctl full">${op('pts',S_.pts.op)}</div>
+    <div class="ctl full">ชุดสี <select data-s="pts" data-f="ramp" aria-label="ชุดสีจุดงบ">${opt(RAMP_NAMES,S_.pts.ramp)}</select><label style="display:flex;gap:3px;align-items:center"><input type="checkbox" data-s="pts" data-f="stroke" ${S_.pts.stroke?'checked':''}>เส้นขอบ</label></div></div>
+  <div class="row"><div class="nm">จุดอุบัติเหตุ</div><div class="ctl"><select data-s="acc" data-f="shape" aria-label="รูปทรงจุดอุบัติเหตุ">${opt(SHAPES,S_.acc.shape)}</select></div>
+    <div class="ctl full">${op('acc',S_.acc.op)}</div>
+    <div class="ctl full">สี <select data-s="acc" data-f="mode" aria-label="วิธีให้สี"><option value="sev"${S_.acc.mode==='sev'?' selected':''}>ตามความรุนแรง</option><option value="one"${S_.acc.mode==='one'?' selected':''}>สีเดียว</option></select><input type="color" value="${S_.acc.color}" data-s="acc" data-f="color" aria-label="สีจุดอุบัติเหตุ" ${S_.acc.mode==='sev'?'disabled':''}><label style="display:flex;gap:3px;align-items:center"><input type="checkbox" data-s="acc" data-f="stroke" ${S_.acc.stroke?'checked':''}>ขอบ (สาหัสขึ้นไป)</label></div></div>
+  <div class="row"><div class="nm">สะพานบนสายทาง</div><div class="ctl"><select data-s="br" data-f="shape" aria-label="รูปทรงสะพาน">${opt(SHAPES,S_.br.shape)}</select><input type="color" value="${S_.br.color}" data-s="br" data-f="color" aria-label="สีสะพาน"></div>
+    <div class="ctl full">${op('br',S_.br.op)}</div></div>
+  <div class="row"><div class="nm">โครงข่ายสายทาง</div><div class="ctl">ได้งบ <input type="color" value="${S_.roads.funded}" data-s="roads" data-f="funded" aria-label="สีสายที่ได้งบ"> ไม่ได้งบ <input type="color" value="${S_.roads.unf}" data-s="roads" data-f="unf" aria-label="สีสายที่ไม่ได้งบ"></div>
+    <div class="ctl full">${op('roads',S_.roads.op)}</div>
+    <div class="ctl full">ความหนาเส้น <input type="range" min="0.5" max="3" step="0.1" value="${S_.roads.w}" data-s="roads" data-f="w" aria-label="ความหนาเส้น"><span class="num">×${S_.roads.w}</span></div></div>`}
+function renderDrawer(){renderOrder();renderStyle();
   $('#s-baseop').value=CFG.baseOp;$('#s-baseop-v').textContent=Math.round(CFG.baseOp*100)+'%';
   $('#s-layers').innerHTML=Object.entries(LAYER_NAMES).map(([k,n])=>{const c=CFG.layers[k];return `<div class="row"><div class="nm">${n}</div><div class="ctl">
     <select data-l="${k}" data-f="min" aria-label="${n} ซูมต่ำสุด">${zOpts(c.min)}</select>–<select data-l="${k}" data-f="max" aria-label="${n} ซูมสูงสุด">${zOpts(c.max)}</select></div>
@@ -542,6 +591,21 @@ function renderDrawer(){
       <select data-b="road" data-f="only"><option value="funded"${c.only==='funded'?' selected':''}>เฉพาะสายที่ได้งบ</option><option value="all"${c.only==='all'?' selected':''}>ทุกสาย</option></select></div>`:''}
     <div class="ctl full">แสดงที่ <select data-b="${k}" data-f="min">${zOpts(c.min)}</select>–<select data-b="${k}" data-f="max">${zOpts(c.max)}</select></div></div>`}).join('');
 }
+let dragK=null;
+$('#s-order').addEventListener('dragstart',e=>{const r=e.target.closest('.drag');if(!r)return;dragK=r.dataset.k;r.style.opacity=.5;e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain',dragK)}catch(_){}});
+$('#s-order').addEventListener('dragend',e=>{const r=e.target.closest('.drag');if(r)r.style.opacity='';dragK=null});
+$('#s-order').addEventListener('dragover',e=>{if(dragK)e.preventDefault()});
+$('#s-order').addEventListener('drop',e=>{e.preventDefault();const r=e.target.closest('.drag');if(!r||!dragK||r.dataset.k===dragK)return;const o=CFG.order;o.splice(o.indexOf(dragK),1);
+  const rect=r.getBoundingClientRect(),after=e.clientY>rect.top+rect.height/2;o.splice(o.indexOf(r.dataset.k)+(after?1:0),0,dragK);dragK=null;saveCfg();renderOrder();applyOrder()});
+$('#drawer').addEventListener('click',e=>{const b=e.target.closest('button[data-mv]');if(!b)return;const k=b.dataset.mv,d=+b.dataset.d,o=CFG.order,i=o.indexOf(k),j=i+d;if(j<0||j>=o.length)return;[o[i],o[j]]=[o[j],o[i]];saveCfg();renderOrder();applyOrder()});
+let styleT=null;
+$('#drawer').addEventListener('input',e=>{const t=e.target;if(!t.dataset.s)return;e.stopImmediatePropagation();const g=CFG.style[t.dataset.s],f=t.dataset.f;
+  g[f]=t.type==='checkbox'?t.checked:t.type==='range'?+t.value:t.value;
+  if(t.type==='range'&&t.nextElementSibling)t.nextElementSibling.textContent=f==='w'?'×'+g[f]:pct(g[f]);
+  if(f==='mode')renderStyle();
+  if(t.dataset.s==='pts'&&f==='ramp')RAMP=RAMPS[g.ramp]||RAMPS.gold;
+  saveCfg();clearTimeout(styleT);styleT=setTimeout(()=>{if(t.dataset.s==='br'){brBuilt=false;if(map.hasLayer(brLayer)||$('#ly-br').checked)buildBridges()}
+    if(t.dataset.s==='acc')drawAcc(true);if(t.dataset.s==='pts'||t.dataset.s==='roads')drawMap(false);applyOrder();drawLegend()},120)},true);
 $('#drawer').addEventListener('input',e=>{const t=e.target;if(t.id==='s-baseop'){CFG.baseOp=+t.value;$('#s-baseop-v').textContent=Math.round(CFG.baseOp*100)+'%';if(baseLayer&&baseLayer.setOpacity)baseLayer.setOpacity(CFG.baseOp);saveCfg();return}
   const grp=t.dataset.l?CFG.layers[t.dataset.l]:t.dataset.b?CFG.labels[t.dataset.b]:null;if(!grp)return;const f=t.dataset.f;
   let v=t.type==='checkbox'?t.checked:t.type==='color'?t.value:(f==='field'||f==='only')?t.value:+t.value;grp[f]=v;
@@ -551,7 +615,7 @@ $('#drawer').addEventListener('input',e=>{const t=e.target;if(t.id==='s-baseop')
   if(t.dataset.l){if(f==='size'){if(t.dataset.l==='acc')drawAcc(true);else drawMap(false)}applyVis()}else labels.redraw()});
 $('#open-set').onclick=()=>{renderDrawer();$('#s-token').value=CFG.drrToken||'';$('#drawer').hidden=false};
 $('#s-token-apply').onclick=()=>{CFG.drrToken=$('#s-token').value.trim();saveCfg();setBase('drr')};$('#close-set').onclick=()=>$('#drawer').hidden=true;
-$('#s-reset').onclick=()=>{const b=CFG.base;CFG=JSON.parse(JSON.stringify(DEF_CFG));CFG.base=b;saveCfg();renderDrawer();if(baseLayer&&baseLayer.setOpacity)baseLayer.setOpacity(1);drawAcc(true);drawMap(false);applyVis()};
+$('#s-reset').onclick=()=>{const b=CFG.base,tk=CFG.drrToken;CFG=JSON.parse(JSON.stringify(DEF_CFG));CFG.base=b;CFG.drrToken=tk;RAMP=RAMPS.gold;brBuilt=false;saveCfg();renderDrawer();if(baseLayer&&baseLayer.setOpacity)baseLayer.setOpacity(1);drawAcc(true);drawMap(false);applyVis()};
 
 /* ---------- tooltip ---------- */
 const tip=$('#tip');
