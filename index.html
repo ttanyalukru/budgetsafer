@@ -14,6 +14,7 @@
   --f-body:"IBM Plex Sans Thai",system-ui,"Segoe UI",Tahoma,sans-serif;
   --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
 }
+[hidden]{display:none!important}
 html,body{height:100%}
 body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--f-body);margin:0}
 *{box-sizing:border-box}
@@ -101,6 +102,16 @@ td.r,th.r{text-align:right}
 .kpi .v.f{color:#ff6b6b}.kpi .v.s{color:#ffa45c}
 .sev{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3px;vertical-align:-1px}
 select:disabled,.btn:disabled,input:disabled{opacity:.4;cursor:default}
+.mapctl{display:flex;flex-direction:column;gap:4px}
+.mapctl button{background:rgba(10,17,23,.9);border:1px solid var(--line);color:var(--ink2);border-radius:7px;padding:4px 8px;font:12px var(--f-body);cursor:pointer;text-align:left;white-space:nowrap}
+.mapctl button[aria-pressed="false"]{color:var(--muted);text-decoration:line-through;text-decoration-color:rgba(108,129,145,.6)}
+.mapctl button:hover{border-color:var(--accent)}
+.savebar{position:sticky;bottom:-12px;margin:12px -14px -12px;padding:10px 14px;background:rgba(12,20,27,.98);border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.savebar .st{font-size:11.5px;color:var(--muted);flex:1;min-width:120px}
+.savebar .st.dirty{color:var(--warn)}
+.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.preset{display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px solid rgba(31,48,60,.7)}
+.preset .pn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
 .drawer .drag{cursor:grab}.drawer .drag:active{cursor:grabbing}
 .layers{max-height:calc(100% - 20px);overflow:auto}
 .layers .bm{display:flex;flex-direction:column;gap:3px;padding-bottom:6px;margin-bottom:4px;border-bottom:1px solid var(--line)}
@@ -221,7 +232,16 @@ select:disabled,.btn:disabled,input:disabled{opacity:.4;cursor:default}
       <h4>ป้ายชื่อ (Label)</h4>
       <div id="s-labels"></div>
       <p class="hint">ป้ายที่ทับกันจะซ่อนอัตโนมัติ โดยให้ลำดับความสำคัญ จังหวัด → สายทาง → อำเภอ → ตำบล</p>
-      <div style="display:flex;gap:8px;margin-top:12px"><button class="btn" id="s-reset" type="button">คืนค่าเริ่มต้น</button></div>
+      <h4>ชุดการตั้งค่า</h4>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><input id="p-name" type="text" placeholder="ตั้งชื่อชุด เช่น นำเสนอผู้บริหาร" autocomplete="off" style="flex:1;min-width:140px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:12px">
+        <button class="btn" id="p-save" type="button">บันทึกเป็นชุดใหม่</button></div>
+      <label style="display:flex;gap:6px;align-items:center;margin-top:6px;color:var(--ink2)"><input type="checkbox" id="p-filters" checked> รวมตัวกรอง (ปี, สทช., จังหวัด ฯลฯ) และตำแหน่งแผนที่</label>
+      <div id="p-list" style="margin-top:6px"></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn" id="p-export" type="button">ส่งออกไฟล์ .json</button>
+        <label class="btn" for="p-import" style="display:inline-flex;align-items:center">นำเข้าไฟล์ .json</label><input id="p-import" type="file" accept=".json,application/json" hidden></div>
+      <p class="hint">ส่งไฟล์ .json ให้เพื่อนร่วมงานนำเข้า เพื่อใช้การตั้งค่าเดียวกัน · ชุดการตั้งค่าเก็บในเบราว์เซอร์นี้</p>
+      <div class="savebar"><span class="st" id="save-st">บันทึกแล้ว</span>
+        <button class="btn" id="s-reset" type="button">คืนค่าเริ่มต้น</button><button class="btn pri" id="s-save" type="button">บันทึกการตั้งค่า</button></div>
     </aside>
   </main>
 
@@ -320,6 +340,13 @@ $('#q').addEventListener('change',e=>{const v=e.target.value.trim().replace(/\s/
 
 /* ---------- map ---------- */
 const map=L.map('map',{preferCanvas:true,zoomSnap:.25,minZoom:5,maxZoom:15,attributionControl:true}).setView([13.2,101],6);
+const UICtl=L.Control.extend({options:{position:'topleft'},onAdd(){const d=L.DomUtil.create('div','mapctl');
+  d.innerHTML=`<button type="button" data-ui="legend" title="ซ่อน/แสดงคำอธิบายสัญลักษณ์">คำอธิบายสัญลักษณ์</button><button type="button" data-ui="layers" title="ซ่อน/แสดงแผงชั้นข้อมูล">แผงชั้นข้อมูล</button><button type="button" data-ui="labels" title="ซ่อน/แสดงป้ายชื่อบนแผนที่">ป้ายชื่อ</button>`;
+  L.DomEvent.disableClickPropagation(d);d.addEventListener('click',e=>{const b=e.target.closest('button[data-ui]');if(!b)return;const k=b.dataset.ui;CFG.ui[k]=!CFG.ui[k];applyUI();saveCfg()});return d}});
+map.addControl(new UICtl());
+function applyUI(){const u=CFG.ui;$('#legend').hidden=!u.legend;document.querySelector('.layers').hidden=!u.layers;
+  const lp=map.getPane('lblPane');if(lp)lp.style.display=u.labels?'':'none';
+  document.querySelectorAll('.mapctl button').forEach(b=>b.setAttribute('aria-pressed',u[b.dataset.ui]?'true':'false'))}
 map.attributionControl.setPrefix(false).addAttribution('ขอบเขตประเทศ: Natural Earth · ขอบเขตจังหวัด/อำเภอ/ตำบล: OpenGISData-Thailand · ข้อมูลงบ: ทช.');
 const rend=L.canvas({padding:.3,tolerance:8});
 map.options.renderer=rend;
@@ -332,10 +359,20 @@ const DEF_CFG={base:'dark',baseOp:1,order:['pts','acc','br','roads'],
   layers:{roads:{min:5,max:17},pts:{min:5,max:17,size:1},acc:{min:5,max:17,size:1},br:{min:8,max:17},pro:{min:5,max:17},amp:{min:7,max:17},tam:{min:9,max:17}},
   labels:{pro:{on:true,size:12,color:'#c9d6df',halo:true,min:6,max:9,field:'name'},road:{on:false,size:11,color:'#ffe08a',halo:true,min:10,max:17,field:'code',only:'funded'},
           amp:{on:false,size:11,color:'#a3b4c1',halo:true,min:9,max:12,field:'name'},tam:{on:false,size:10,color:'#8ea2b1',halo:true,min:11,max:17,field:'name'}}};
-let CFG=JSON.parse(JSON.stringify(DEF_CFG));
-try{const sv=JSON.parse(localStorage.getItem('drrmap.cfg.v1')||'null');if(sv){CFG=Object.assign(CFG,sv);['layers','labels','style'].forEach(k=>{CFG[k]=Object.assign(JSON.parse(JSON.stringify(DEF_CFG[k])),sv[k]||{});Object.keys(DEF_CFG[k]).forEach(n=>CFG[k][n]=Object.assign({},DEF_CFG[k][n],(sv[k]||{})[n]||{}))})}}catch(e){}
+let CFG=JSON.parse(JSON.stringify(DEF_CFG));let STARTUP=null;
+try{let sv=JSON.parse(localStorage.getItem('drrmap.cfg.v1')||'null');if(sv&&sv.cfg){STARTUP=sv;sv=sv.cfg}if(sv){CFG=Object.assign(CFG,sv);['layers','labels','style'].forEach(k=>{CFG[k]=Object.assign(JSON.parse(JSON.stringify(DEF_CFG[k])),sv[k]||{});Object.keys(DEF_CFG[k]).forEach(n=>CFG[k][n]=Object.assign({},DEF_CFG[k][n],(sv[k]||{})[n]||{}))})}}catch(e){}
 if(!Array.isArray(CFG.order)||CFG.order.slice().sort().join()!==DEF_CFG.order.slice().sort().join())CFG.order=DEF_CFG.order.slice();
-function saveCfg(){try{localStorage.setItem('drrmap.cfg.v1',JSON.stringify(CFG))}catch(e){}}
+DEF_CFG.ui={legend:true,layers:true,labels:true};if(!CFG.ui)CFG.ui=Object.assign({},DEF_CFG.ui);
+let DIRTY=false;
+function saveCfg(){DIRTY=true;const st=document.getElementById('save-st');if(st){st.textContent='มีการเปลี่ยนแปลงที่ยังไม่บันทึก';st.classList.add('dirty')}}
+const LY_IDS=['ly-roads','ly-unf','ly-pts','ly-br','ly-pro','ly-amp','ly-tam','ly-acc'];
+function snapshot(withFilters){const o={v:1,cfg:JSON.parse(JSON.stringify(CFG)),layers:{},shade:$('#f-shade').value};
+  LY_IDS.forEach(id=>o.layers[id]=$('#'+id).checked);
+  if(withFilters){const c=map.getCenter();o.view={lat:+c.lat.toFixed(5),lng:+c.lng.toFixed(5),z:map.getZoom()};
+    o.filters={years:[...S.years],metric:S.metric,view:S.view,bur:S.bur,own:S.own,prov:S.prov,type:S.type,acc:{mode:S.acc.mode,years:[...S.acc.years],sev:S.acc.sev}}}
+  return o}
+function commitSave(){try{localStorage.setItem('drrmap.cfg.v1',JSON.stringify(snapshot(true)));DIRTY=false;const st=$('#save-st');st.textContent='บันทึกแล้ว · เปิดครั้งหน้าจะใช้ค่านี้';st.classList.remove('dirty');return true}
+  catch(e){toast('บันทึกไม่ได้: เบราว์เซอร์นี้ไม่อนุญาตให้เก็บข้อมูล (เช่น โหมดไม่ระบุตัวตน) · ใช้ "ส่งออกไฟล์ .json" แทน');return false}}
 const scaleTxt=z=>{const d=591657527.6*0.974/Math.pow(2,z);return '1:'+(d>=1e6?(d/1e6).toFixed(d>=1e7?0:1)+' ล้าน':Math.round(d/1000)+'k')};
 const inZ=(c,z=map.getZoom())=>z>=c.min&&z<=c.max;
 
@@ -613,9 +650,45 @@ $('#drawer').addEventListener('input',e=>{const t=e.target;if(t.id==='s-baseop')
   if(f==='size'&&t.type==='range'&&t.nextElementSibling)t.nextElementSibling.textContent='×'+v;
   saveCfg();if(f==='min'||f==='max'){renderDrawer()}
   if(t.dataset.l){if(f==='size'){if(t.dataset.l==='acc')drawAcc(true);else drawMap(false)}applyVis()}else labels.redraw()});
-$('#open-set').onclick=()=>{renderDrawer();$('#s-token').value=CFG.drrToken||'';$('#drawer').hidden=false};
-$('#s-token-apply').onclick=()=>{CFG.drrToken=$('#s-token').value.trim();saveCfg();setBase('drr')};$('#close-set').onclick=()=>$('#drawer').hidden=true;
+$('#open-set').onclick=()=>{renderDrawer();renderPresets();$('#s-token').value=CFG.drrToken||'';$('#drawer').hidden=false};
+$('#s-token-apply').onclick=()=>{CFG.drrToken=$('#s-token').value.trim();setBase('drr');commitSave()};$('#close-set').onclick=()=>$('#drawer').hidden=true;
 $('#s-reset').onclick=()=>{const b=CFG.base,tk=CFG.drrToken;CFG=JSON.parse(JSON.stringify(DEF_CFG));CFG.base=b;CFG.drrToken=tk;RAMP=RAMPS.gold;brBuilt=false;saveCfg();renderDrawer();if(baseLayer&&baseLayer.setOpacity)baseLayer.setOpacity(1);drawAcc(true);drawMap(false);applyVis()};
+
+/* ---------- save / presets ---------- */
+function mergeCfg(src){const c=JSON.parse(JSON.stringify(DEF_CFG));Object.assign(c,src||{});['layers','labels','style'].forEach(k=>{c[k]=Object.assign({},DEF_CFG[k]);Object.keys(DEF_CFG[k]).forEach(n=>c[k][n]=Object.assign({},DEF_CFG[k][n],((src||{})[k]||{})[n]||{}))});
+  c.ui=Object.assign({},DEF_CFG.ui,(src||{}).ui||{});if(!Array.isArray(c.order)||c.order.slice().sort().join()!==DEF_CFG.order.slice().sort().join())c.order=DEF_CFG.order.slice();return c}
+function applyUIState(snap){if(snap.layers)LY_IDS.forEach(id=>{if(id in snap.layers)$('#'+id).checked=!!snap.layers[id]});S.acc.on=$('#ly-acc').checked;
+  if(snap.shade!=null){$('#f-shade').value=snap.shade;S.shade=snap.shade}
+  const f=snap.filters;if(f){S.years=new Set(f.years&&f.years.length?f.years:YEARS);S.metric=f.metric||'pbr';S.view=f.view||'pt';S.bur=f.bur||'';S.own=f.own||'';S.prov=f.prov||'';S.type=f.type||'';
+    if(f.acc){S.acc.mode=f.acc.mode||'cal';S.acc.years=new Set(f.acc.years&&f.acc.years.length?f.acc.years:AYEARS);S.acc.sev=f.acc.sev||''}
+    syncYears();syncAccYears();['pbr','trf'].forEach(m=>$('#m-'+m).setAttribute('aria-pressed',S.metric===m?'true':'false'));['pt','ln'].forEach(v=>$('#v-'+v).setAttribute('aria-pressed',S.view===v?'true':'false'));
+    $('#a-cal').setAttribute('aria-pressed',S.acc.mode==='cal'?'true':'false');$('#a-fy').setAttribute('aria-pressed',S.acc.mode==='fy'?'true':'false');$('#a-sev').value=S.acc.sev;
+    $('#f-bureau').value=S.bur;fillOwners();$('#f-owner').value=S.own;$('#f-prov').value=S.prov;$('#f-type').value=S.type}}
+function applySnapshot(snap){const oldBase=CFG.base,tk=CFG.drrToken;CFG=mergeCfg(snap.cfg);if(!CFG.drrToken)CFG.drrToken=tk;RAMP=RAMPS[CFG.style.pts.ramp]||RAMPS.gold;brBuilt=false;
+  applyUIState(snap);if(snap.view)map.setView([snap.view.lat,snap.view.lng],snap.view.z,{animate:false});
+  update(false);if(CFG.base!==oldBase||!baseLayer)setBase(CFG.base);else if(baseLayer&&baseLayer.setOpacity)baseLayer.setOpacity(CFG.baseOp);
+  drawAcc(true);applyVis();applyUI();drawLegend();if(!$('#drawer').hidden){renderDrawer();$('#s-token').value=CFG.drrToken||''}}
+const PKEY='drrmap.presets.v1';
+function loadPresets(){try{return JSON.parse(localStorage.getItem(PKEY)||'[]')}catch(e){return[]}}
+function storePresets(a){try{localStorage.setItem(PKEY,JSON.stringify(a));return true}catch(e){toast('เก็บชุดการตั้งค่าในเบราว์เซอร์นี้ไม่ได้ · ใช้ "ส่งออกไฟล์ .json" แทน');return false}}
+function renderPresets(){const a=loadPresets();$('#p-list').innerHTML=a.length?a.map((p,i)=>`<div class="preset"><span class="pn" title="${esc(p.name)}">${esc(p.name)}</span><span class="sub">${esc(p.at||'')}</span>
+  <button class="btn" data-pa="use" data-i="${i}" type="button">ใช้</button><button class="btn" data-pa="del" data-i="${i}" type="button" aria-label="ลบชุด ${esc(p.name)}">ลบ</button></div>`).join(''):'<div class="sub">ยังไม่มีชุดที่บันทึกไว้</div>'}
+$('#p-save').onclick=()=>{const n=$('#p-name').value.trim()||('ชุดที่ '+(loadPresets().length+1));const a=loadPresets().filter(p=>p.name!==n);
+  const d=new Date();a.unshift({name:n,at:d.toLocaleDateString('th-TH',{day:'numeric',month:'short'})+' '+d.toTimeString().slice(0,5),snap:snapshot($('#p-filters').checked)});
+  if(storePresets(a)){$('#p-name').value='';renderPresets();toast('บันทึกชุด "'+n+'" แล้ว')}};
+$('#p-list').addEventListener('click',e=>{const b=e.target.closest('button[data-pa]');if(!b)return;const a=loadPresets(),i=+b.dataset.i;if(!a[i])return;
+  if(b.dataset.pa==='use'){applySnapshot(a[i].snap);saveCfg();toast('ใช้ชุด "'+a[i].name+'" แล้ว · กด "บันทึกการตั้งค่า" ถ้าต้องการให้เป็นค่าเริ่มต้นครั้งหน้า')}
+  else{if(b.dataset.c!=='1'){b.dataset.c='1';b.textContent='ยืนยันลบ';setTimeout(()=>{if(b.isConnected){b.dataset.c='';b.textContent='ลบ'}},3000);return}a.splice(i,1);storePresets(a);renderPresets()}});
+$('#p-export').onclick=()=>{const data={app:'ระบบกระจาย งปม.สอป.',exported:new Date().toISOString(),current:snapshot($('#p-filters').checked),presets:loadPresets()};
+  data.current.cfg.drrToken='';data.presets.forEach(p=>{if(p.snap&&p.snap.cfg)p.snap.cfg.drrToken=''});
+  const blob=new Blob([JSON.stringify(data,null,1)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='ตั้งค่า_ระบบกระจายงปม.json';document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500);toast('ส่งออกไฟล์แล้ว (ไม่รวม Token) · ถ้าไม่มีไฟล์ดาวน์โหลด แสดงว่าหน้านี้ไม่อนุญาตให้ดาวน์โหลด ให้เปิดจากเว็บ Netlify')};
+$('#p-import').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());const cur=d.current||d;
+  if(Array.isArray(d.presets)&&d.presets.length){const a=loadPresets();d.presets.forEach(p=>{if(p&&p.name&&p.snap&&!a.some(x=>x.name===p.name))a.push(p)});storePresets(a);renderPresets()}
+  if(cur&&cur.cfg){applySnapshot(cur);saveCfg()}toast('นำเข้า "'+f.name+'" แล้ว · กด "บันทึกการตั้งค่า" เพื่อใช้เป็นค่าเริ่มต้น')}catch(err){toast('อ่านไฟล์ไม่ได้: ต้องเป็นไฟล์ .json ที่ส่งออกจากระบบนี้')}e.target.value=''};
+$('#s-save').onclick=()=>{if(commitSave())toast('บันทึกการตั้งค่าแล้ว')};
+document.querySelector('.layers').addEventListener('change',()=>saveCfg());
+window.addEventListener('beforeunload',e=>{if(DIRTY){e.preventDefault();e.returnValue=''}});
 
 /* ---------- tooltip ---------- */
 const tip=$('#tip');
@@ -749,6 +822,7 @@ function select(k,fly){
 }
 
 function update(fit){aggregate();drawAcc();drawMap(fit);drawPanels();drawAccPanel();labels.redraw();if(S.sel&&!$('#detail').hidden)select(S.sel,'quiet')}
-update();setBase(CFG.base);applyVis();
+if(STARTUP){applyUIState(STARTUP);if(STARTUP.view)map.setView([STARTUP.view.lat,STARTUP.view.lng],STARTUP.view.z,{animate:false})}
+update();setBase(CFG.base);applyVis();applyUI();DIRTY=false;
 })();
 </script>
