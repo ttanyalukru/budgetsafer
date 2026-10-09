@@ -207,6 +207,8 @@ select:disabled{opacity:.5}
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font:700 15px var(--f-display)">ตั้งค่าชั้นข้อมูลและป้าย</b><button class="x" id="close-set" aria-label="ปิด">✕</button></div>
       <h4>แผนที่พื้นหลัง</h4>
       <div class="row"><div class="nm">ความทึบ</div><div class="ctl"><input type="range" id="s-baseop" min="0.2" max="1" step="0.05"><span class="num" id="s-baseop-v"></span></div></div>
+      <div class="row"><label class="nm" for="s-token">Token แผนที่ ทช.</label><div class="ctl full" style="grid-column:1/-1"><input id="s-token" type="text" autocomplete="off" spellcheck="false" placeholder="วาง Token จาก gis.drr.go.th" style="flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:11.5px var(--f-mono)"><button class="btn" id="s-token-apply" type="button">ใช้ Token</button></div></div>
+      <p class="hint">บริการ DRR_BasemapCached ต้องใช้ Token · ขอได้จาก https://gis.drr.go.th/arcgis/tokens/ ด้วยบัญชี GIS ของ ทช. · Token เก็บเฉพาะในเบราว์เซอร์นี้ ไม่ได้ฝังในไฟล์</p>
       <h4>การแสดงผลตามระดับซูม</h4>
       <div id="s-layers"></div>
       <p class="hint">ชั้นจะแสดงเมื่อระดับซูมอยู่ในช่วงที่ตั้ง และติ๊กเปิดอยู่ในแผงชั้นข้อมูล · ตัวเลข 1:… คือมาตราส่วนโดยประมาณที่ละติจูดประเทศไทย</p>
@@ -348,20 +350,26 @@ function watchTiles(layer,key){let ok=0,bad=0;clearTimeout(baseWatch);
   function fail(){if(CFG.base!==key)return;clearTimeout(baseWatch);toast(`โหลด "${BASES[key].name}" ไม่ได้ จึงกลับไปใช้แผนที่แบบเข้ม · ในลิงก์ Claude เปิดภาพแผนที่จากเว็บภายนอกไม่ได้ ให้เปิดไฟล์ HTML บนเครื่องหรือเว็บของหน่วยงานแทน${key==='drr'?' (แผนที่ ทช. อาจต้องอยู่ในเครือข่ายของ ทช.)':''}`);setBase('dark')}}
 /* ArcGIS cached MapServer: read tileInfo; Web Mercator → tiles, otherwise → server-side export per view */
 const ArcExport=L.Layer.extend({initialize(url,opt){this._url=url;L.setOptions(this,opt)},
-  onAdd(map){this._map=map;map.on('moveend',this._update,this);this._update()},onRemove(map){map.off('moveend',this._update,this);if(this._img)this._img.remove();this._img=null},
+  onAdd(map){this._map=map;this._all=new Set();map.on('moveend',this._update,this);this._update()},onRemove(map){map.off('moveend',this._update,this);this._all.forEach(i=>i.remove());this._all.clear();this._img=null},
   setOpacity(o){this.options.opacity=o;if(this._img)this._img.setOpacity(o)},
   _update(){const m=this._map,b=m.getBounds(),sz=m.getSize(),sw=L.CRS.EPSG3857.project(b.getSouthWest()),ne=L.CRS.EPSG3857.project(b.getNorthEast());
-    const u=`${this._url}/export?bbox=${sw.x},${sw.y},${ne.x},${ne.y}&bboxSR=3857&imageSR=3857&size=${sz.x},${sz.y}&format=png32&transparent=false&f=image`;
-    const img=L.imageOverlay(u,b,{opacity:this.options.opacity,interactive:false,pane:'tilePane'});img.on('load',()=>{this.fire('load');if(this._img&&this._img!==img)this._img.remove();this._img=img});img.on('error',()=>this.fire('error'));img.addTo(m)}});
-async function arcLayer(b){const opt={opacity:CFG.baseOp,attribution:b.attr,maxZoom:ZMAX};
-  try{const r=await fetch(b.arcgis+'?f=json');const j=await r.json();const ti=j.tileInfo,wk=(j.spatialReference||{}).latestWkid||(j.spatialReference||{}).wkid;
+    const u=`${this._url}/export?bbox=${sw.x},${sw.y},${ne.x},${ne.y}&bboxSR=3857&imageSR=3857&size=${sz.x},${sz.y}&format=png32&transparent=false&f=image${this.options.token?'&token='+encodeURIComponent(this.options.token):''}`;
+    const img=L.imageOverlay(u,b,{opacity:this.options.opacity,interactive:false,pane:'tilePane'});this._all.add(img);
+    img.on('load',()=>{this.fire('load');this._all.forEach(o=>{if(o!==img){o.remove();this._all.delete(o)}});this._img=img});
+    img.on('error',()=>{img.remove();this._all.delete(img);this.fire('error')});img.addTo(m)}});
+async function arcLayer(b){const opt={opacity:CFG.baseOp,attribution:b.attr,maxZoom:ZMAX};const tk=(CFG.drrToken||'').trim(),tq=tk?'?token='+encodeURIComponent(tk):'';
+  let j=null;try{const r=await fetch(b.arcgis+'?f=json'+(tk?'&token='+encodeURIComponent(tk):''));j=await r.json()}catch(e){j=null}
+  if(j&&j.error){const c=j.error.code;throw new Error(c===499||c===498||c===403?(tk?'Token ไม่ถูกต้องหรือหมดอายุ':'บริการนี้ต้องใช้ Token'):'เซิร์ฟเวอร์ตอบกลับ: '+(j.error.message||c))}
+  try{if(!j)throw 0;const ti=j.tileInfo,wk=(j.spatialReference||{}).latestWkid||(j.spatialReference||{}).wkid;
     if(ti&&(wk===3857||wk===102100)&&Math.abs(ti.origin.x+20037508.342787)<1){const lods=ti.lods.map(l=>({lv:l.level,z:Math.round(Math.log2(156543.03392804097/l.resolution))}));
-      const off=lods[0].z-lods[0].lv;return L.tileLayer(b.arcgis+'/tile/{z}/{y}/{x}',Object.assign(opt,{zoomOffset:-off,minNativeZoom:lods[0].z,maxNativeZoom:lods[lods.length-1].z}))}
-    return new ArcExport(b.arcgis,opt)}
-  catch(e){return L.tileLayer(b.arcgis+'/tile/{z}/{y}/{x}',opt)}}
+      const off=lods[0].z-lods[0].lv;return L.tileLayer(b.arcgis+'/tile/{z}/{y}/{x}'+tq,Object.assign(opt,{zoomOffset:-off,minNativeZoom:lods[0].z,maxNativeZoom:lods[lods.length-1].z}))}
+    return new ArcExport(b.arcgis+'',Object.assign(opt,{token:tk}))}
+  catch(e){return L.tileLayer(b.arcgis+'/tile/{z}/{y}/{x}'+tq,opt)}}
 async function setBase(key){CFG.base=key;saveCfg();$('#f-base').value=key;if(baseLayer){map.removeLayer(baseLayer);baseLayer=null}
   const b=BASES[key];if(b.builtin){landStyle(b.builtin);return}
-  landStyle('tiles');const lay=b.arcgis?await arcLayer(b):L.tileLayer(b.url,{opacity:CFG.baseOp,attribution:b.attr,maxZoom:ZMAX,maxNativeZoom:b.max||19,subdomains:'abcd'});
+  landStyle('tiles');let lay;
+  if(b.arcgis){try{lay=await arcLayer(b)}catch(e){if(CFG.base!==key)return;toast(`แผนที่ ทช.: ${e.message} · ใส่ Token ได้ที่ "ตั้งค่าชั้นข้อมูลและป้าย" → แผนที่พื้นหลัง · ระหว่างนี้กลับไปใช้แผนที่แบบเข้ม`);setBase('dark');return}}
+  else lay=L.tileLayer(b.url,{opacity:CFG.baseOp,attribution:b.attr,maxZoom:ZMAX,maxNativeZoom:b.max||19,subdomains:'abcd'});
   if(CFG.base!==key)return;baseLayer=lay;watchTiles(lay,key);lay.addTo(map)}
 $('#f-base').onchange=e=>setBase(e.target.value);
 /* admin boundaries (OpenGISData-Thailand, simplified) */
@@ -541,7 +549,8 @@ $('#drawer').addEventListener('input',e=>{const t=e.target;if(t.id==='s-baseop')
   if(f==='size'&&t.type==='range'&&t.nextElementSibling)t.nextElementSibling.textContent='×'+v;
   saveCfg();if(f==='min'||f==='max'){renderDrawer()}
   if(t.dataset.l){if(f==='size'){if(t.dataset.l==='acc')drawAcc(true);else drawMap(false)}applyVis()}else labels.redraw()});
-$('#open-set').onclick=()=>{renderDrawer();$('#drawer').hidden=false};$('#close-set').onclick=()=>$('#drawer').hidden=true;
+$('#open-set').onclick=()=>{renderDrawer();$('#s-token').value=CFG.drrToken||'';$('#drawer').hidden=false};
+$('#s-token-apply').onclick=()=>{CFG.drrToken=$('#s-token').value.trim();saveCfg();setBase('drr')};$('#close-set').onclick=()=>$('#drawer').hidden=true;
 $('#s-reset').onclick=()=>{const b=CFG.base;CFG=JSON.parse(JSON.stringify(DEF_CFG));CFG.base=b;saveCfg();renderDrawer();if(baseLayer&&baseLayer.setOpacity)baseLayer.setOpacity(1);drawAcc(true);drawMap(false);applyVis()};
 
 /* ---------- tooltip ---------- */
