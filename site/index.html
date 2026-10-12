@@ -444,6 +444,13 @@ function buildAdm(lv){if(admLayers[lv]&&admLayers[lv]._act===(S.shade===lv))retu
 const admGroup=L.layerGroup().addTo(map);
 function syncAdm(){admGroup.clearLayers();['t','a','p',...Object.keys(XBY)].forEach(lv=>{const nm={p:'pro',a:'amp',t:'tam'}[lv]||lv;const on=($('#ly-'+nm).checked&&inZ(CFG.layers[nm]))||S.shade===lv;if(on)admGroup.addLayer(buildAdm(lv))});[...Object.keys(XBY),'p','a','t'].forEach(lv=>{if(admLayers[lv]&&admGroup.hasLayer(admLayers[lv]))admLayers[lv].bringToBack()});LAND.forEach(l=>l.bringToBack());shadeAdm()}
 let SHADE=new Map(),ASHADE=new Map();
+const XFIND={};function xFind(k,x,y){if(!XFIND[k])XFIND[k]=AF[k].features.map(f=>{const g=f.geometry,polys=g.type==='Polygon'?[g.coordinates]:g.type==='MultiPolygon'?g.coordinates:[];let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;polys.forEach(pl=>pl[0].forEach(([a,b])=>{x0=Math.min(x0,a);y0=Math.min(y0,b);x1=Math.max(x1,a);y1=Math.max(y1,b)}));return {f,polys,b:[x0,y0,x1,y1]}});
+  for(const o of XFIND[k]){if(x<o.b[0]||x>o.b[2]||y<o.b[1]||y>o.b[3])continue;for(const pl of o.polys){if(ringHas(pl[0],x,y)&&!pl.slice(1).some(h=>ringHas(h,x,y)))return o.f}}return null}
+map.on('click',e=>{const src=e.sourceTarget;if(src&&src!==map&&!(src.feature&&src.feature.properties))return;
+  const ks=Object.keys(XBY).filter(k=>S.shade===k||($('#ly-'+k).checked&&inZ(CFG.layers[k])));if(!ks.length)return;
+  const html=ks.map(k=>{const f=xFind(k,e.latlng.lng,e.latlng.lat);if(!f)return '';const pk=f.properties.k,st=S.shade===k?SHADE.get(pk):null,asx=S.shade===k?ASHADE.get(pk):null;
+    return admName(k,f.properties,1)+(st?`<br><span class="num">${fmtM(st.sum)}</span> ล้านบาท · ${st.n} โครงการ`:'')+(asx?`<br>อุบัติเหตุ <span class="num">${fmtN(asx.n)}</span> ครั้ง · เสียชีวิต <span class="num">${fmtN(asx.f)}</span>`:'')}).filter(Boolean).join('<hr style="border:0;border-top:1px solid #334;margin:6px 0">');
+  if(html)L.popup({maxWidth:320}).setLatLng(e.latlng).setContent(html).openOn(map)});
 const PIPDONE={};
 function ringHas(r,x,y){let ins=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const xi=r[i][0],yi=r[i][1],xj=r[j][0],yj=r[j][1];if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))ins=!ins}return ins}
 function pipAssign(k){if(PIPDONE[k])return;const F=AF[k].features.map(f=>{const g=f.geometry,polys=g.type==='Polygon'?[g.coordinates]:g.type==='MultiPolygon'?g.coordinates:[];
